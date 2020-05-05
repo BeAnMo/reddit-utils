@@ -6,8 +6,7 @@
          racket/match
          racket/generator
          racket/async-channel)
-
-
+(require (prefix-in users: "user-reddit-funcs.rkt"))
 
 
 (define (channel)
@@ -24,44 +23,54 @@
     self))
 
 
+; Buffered-Async-Channel, Generator, delay?: Number -> Thread
 (define (generator-thread ch gen #:delay [delay 2])
-  (define manager (proc-manager))
+  (define (next! status)
+    (define-values (_ update step) (next-state gen status))
+    (begin (put! step) update))
 
-  (define (run)
-    (when (manager 'running?)
-      (let ([current (gen)])
-        (if current
-            (ch 'put current)
-            (manager 'stop)))))
-          
+  (define (put! step)
+    (unless (null? step) (ch 'put step)))
+
   (thread
    (lambda ()
-     (let loop ()
-       (begin
-         (sleep delay)
-         (run)
-         (match (thread-try-receive)
-           ['close (begin (manager 'stop))]
-           ['pause (begin (manager 'stop)
-                          (loop))]
-           ['start (begin (manager 'start)
-                          (loop))]
-           [_ (loop)]))))))
+     (let loop ([status (status-manager)])
+       (cond
+         [(status 'done?) null]
+         [else
+          (begin
+            (sleep delay)
+            (match (thread-try-receive)
+              ['close (next! (status 'done))]
+              ['pause (loop (status 'stop))]
+              ['start (loop (next! (status 'start)))]
+              [_ (loop (next! status))]))])))))
 
 
-(define (proc-manager)
-  (let ([running #f])
-    (letrec ([self
-              (lambda (m)
-                (case m
-                  [(start) (begin
-                             (set! running #t)
-                             self)]
-                  [(stop) (begin
-                            (set! running #f)
-                            self)]
-                  [(running?) running]))])
-      self)))
+(define (next-state gen status)
+  (cond
+    [(status 'stopped?) (values gen status null)]
+    [else
+     (define step (gen))
+     (define update
+       (match step
+         [(? null? _) (status 'done)]
+         [__ status]))
+     (values gen update step)]))
+     
+
+(define (status-manager [current 'PENDING])
+  (lambda (m)
+    (case m
+      [(pending) (status-manager 'PENDING)]
+      [(start) (status-manager 'RUNNING)]
+      [(stop) (status-manager 'PAUSED)]
+      [(done) (status-manager 'DONE)]
+      [(running?) (equal? current 'RUNNING)]
+      [(done?) (equal? current 'DONE)]
+      [(stopped?) (equal? current 'PAUSED)]
+      [(pending?) (equal? current 'PENDING)]
+      [else (status-manager current)])))
 
 
 (define (writer-thread #:delay [delay 4])
@@ -91,7 +100,7 @@
   (define producers
     (map (lambda (user)
            (generator-thread ch
-                             (paginator user)))
+                             (users:paginator user)))
          users))
 
   (define (write-out content)

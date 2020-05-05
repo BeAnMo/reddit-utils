@@ -7,6 +7,9 @@
 (require "user-utils.rkt")
 
 
+(provide
+ paginator)
+
 ; String -> Generator<Hash>
 (define (paginator user)
   (define (next-url after)
@@ -21,16 +24,16 @@
 
   (define (loop current visited count)
     (cond
-       [(null? current) null]
-       [(set-member? visited current) null]
-       [else
-        (define the-url (next-url current))
-        (define res (get-json the-url))
-          (begin
-            (yield (current-page the-url count res))
-            (loop (next-pointer res)
-                  (set-add visited current)
-                  (+ count 1)))]))
+      [(or (equal? 'null current)
+           (set-member? visited current)) null]
+      [else
+       (define the-url (next-url current))
+       (define res (get-json the-url))
+       (begin
+         (yield (current-page the-url count res))
+         (loop (next-pointer res)
+               (set-add visited current)
+               (+ count 1)))]))
 
   (generator () (loop "" (set) 0)))
 
