@@ -4,7 +4,8 @@
 (require racket/set
          racket/match
          racket/generator)
-(require "user-utils.rkt")
+(require "user-utils.rkt"
+         (prefix-in oauth: "oauth-v2.rkt"))
 
 
 (provide
@@ -12,8 +13,10 @@
 
 ; String -> Generator<Hash>
 (define (paginator user)
-  (define (next-url after)
-    (user-url user #:params `((after . ,after))))
+  (define (next-page after)
+    (oauth:get `("user" ,user "overview")
+               #:params `((sort . "new")
+                          (after . ,after))))
 
   (define (current-page a-url page-num res)
     (hash 'user user
@@ -27,8 +30,7 @@
       [(or (equal? 'null current)
            (set-member? visited current)) null]
       [else
-       (define the-url (next-url current))
-       (define res (get-json the-url))
+       (define-values (the-url res) (next-page current))
        (begin
          (yield (current-page the-url count res))
          (loop (next-pointer res)

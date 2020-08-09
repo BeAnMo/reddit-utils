@@ -32,19 +32,19 @@
   (define (put! step)
     (unless (null? step) (ch 'put step)))
 
-  (thread
-   (lambda ()
-     (let loop ([status (status-manager)])
-       (cond
-         [(status 'done?) null]
-         [else
-          (begin
-            (sleep delay)
-            (match (thread-try-receive)
-              ['close (next! (status 'done))]
-              ['pause (loop (status 'stop))]
-              ['start (loop (next! (status 'start)))]
-              [_ (loop (next! status))]))])))))
+  (define (loop [status (status-manager)])
+    (cond
+      [(status 'done?) null]
+      [else
+       (begin
+         (sleep delay)
+         (match (thread-try-receive)
+           ['close (next! (status 'done))]
+           ['pause (loop (status 'stop))]
+           ['start (loop (next! (status 'start)))]
+           [_ (loop (next! status))]))]))
+    
+  (thread loop))
 
 
 (define (next-state gen status)
